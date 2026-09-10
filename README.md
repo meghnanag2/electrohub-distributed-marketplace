@@ -19,7 +19,7 @@
   </p>
 </div>
 
-> **🔑 Try it now:** [electrohub-rose.vercel.app](https://electrohub-rose.vercel.app) — log in with `demo@electrohub.com` / `password123` to browse real seeded listings, chat, and see recommendations live. (Frontend on Vercel, backend on a Google Cloud VM behind HTTPS — see [`SYSTEM_DESIGN_AND_DEPLOYMENT.md`](SYSTEM_DESIGN_AND_DEPLOYMENT.md) for the full deployment story.)
+> ** Try it now:** [electrohub-rose.vercel.app](https://electrohub-rose.vercel.app) — log in with `demo@electrohub.com` / `password123` to browse real seeded listings, chat, and see recommendations live. (Frontend on Vercel, backend on a Google Cloud VM behind HTTPS.)
 
 ## 📖 Introduction
 
@@ -29,7 +29,7 @@ Everything runs locally in Docker — one `docker compose up` brings up the full
 
 ---
 
-## ✨ Features
+## Features
 
 - 🔍 **Browse & Search** — filter by category, keyword search, trending / most-saved / new-arrivals sections
 - ⚡ **Autocomplete** — a Trie (prefix tree) ranks suggestions by popularity, with a Redis cache in front of it for hot prefixes
@@ -42,7 +42,7 @@ Everything runs locally in Docker — one `docker compose up` brings up the full
 
 ---
 
-## 🖼️ Website
+## Website
 
 <table>
   <tr>
@@ -110,12 +110,12 @@ Everything runs locally in Docker — one `docker compose up` brings up the full
 
 ---
 
-## 🧩 Technology Stack — topic by topic
+## Technology Stack — topic by topic
 
-### 🔧 Backend framework
+###  Backend framework
 **FastAPI** (Python), 6 independent services. Chosen for native `async` support — the WebSocket chat and every DB/gRPC call are I/O-bound, and async means one process handles many of them concurrently without threads.
 
-### 🔗 Inter-service communication
+### Inter-service communication
 **gRPC + Protocol Buffers** (`protos/*.proto`) for internal calls only — never exposed to the frontend:
 - `listing-service` and `messaging-service` → `user-service.VerifyToken` (every protected endpoint delegates JWT verification here — the signing secret lives in exactly one service)
 - `messaging-service` → `listing-service.GetSellerInfo` / `GetListing` (who owns this item, before writing a "contact seller" message)
@@ -125,7 +125,7 @@ Each `Dockerfile` compiles its own stubs from the shared `.proto` files at build
 ### 🐘 Data storage & sharding
 **PostgreSQL 15 — two independent instances**, not one: `postgres_shard0` and `postgres_shard1`. Every table is split between them by a hand-built **consistent-hashing ring keyed on `user_id`**, not `id % 2`. Full explanation and an actual ring diagram [below](#-consistent-hashing--why-two-shards-dont-mean-double-the-headaches).
 
-### 🔴 Caching — Redis 7
+### Caching — Redis 7
 Three distinct jobs, all in front of Postgres as the source of truth:
 | Use | Mechanism |
 |---|---|
@@ -134,31 +134,31 @@ Three distinct jobs, all in front of Postgres as the source of truth:
 | 💬 Chat fan-out | `PUBLISH`/`SUBSCRIBE` per conversation — see [Real-time Chat Flow](#-real-time-chat-flow) |
 
 ### 📨 Event streaming & 🐰 messaging — two different tools, two different jobs
-- **Kafka 3.7** (the `apache/kafka` image, deliberately not Confluent's — historically amd64-only, which would break ARM deploys). `listing-service` and `messaging-service` **produce** events (`item.viewed`, `item.saved`, `message.sent`, `user.login`) meant to feed an analytics pipeline. ⚠️ **Honest gap:** nothing consumes these topics yet — they're produced and currently go nowhere.
+- **Kafka 3.7** (the `apache/kafka` image, deliberately not Confluent's — historically amd64-only, which would break ARM deploys). `listing-service` and `messaging-service` **produce** events (`item.viewed`, `item.saved`, `message.sent`, `user.login`) meant to feed an analytics pipeline. 
 - **RabbitMQ 3** — a genuine job queue: `messaging-service` publishes a notification job when a buyer contacts a seller, `notification-service` consumes it and sends an email (or logs it, with `SMTP_*` unset). Competing-consumer, ack/retry semantics — the right tool for "deliver this job exactly once," where Kafka is right for "many independent readers might each want a copy of this stream."
 
-### 🌐 Gateway — two reverse proxies, deliberately
+### Gateway — two reverse proxies, deliberately
 - **Nginx** (internal) — routes each path prefix to its owning service, applies per-route rate limits, and hard-blocks `/docs`, `/redoc`, `/openapi.json`, `/debug*`, `/metrics` from ever reaching the internet. Every `proxy_pass` target is resolved **dynamically** through Docker's DNS on each request (not cached at Nginx startup) — so a redeployed service is reachable again within seconds instead of needing an Nginx restart.
 - **Caddy 2** (production only) — terminates TLS, gets its certificate automatically from Let's Encrypt, then hands off to Nginx. Two proxies because they solve different problems: Caddy's whole job is effortless ACME/TLS, Nginx's is routing and rate limiting.
 
-### 🔍 Search
+### Search
 A **Trie** (prefix tree, `services/shared/trie.py`) makes `GET /marketplace/autocomplete?q=<prefix>` an O(prefix length) walk instead of a table scan — each node keeps its own top-10 by `views_count`, maintained at insert time. The Redis cache above sits in front of it as the hot path.
 
-### ⚛️ Frontend
+### Frontend
 **React** (Create React App), talking to the backend purely over HTTP(S)/WSS via Axios. The API base URL is injected at **build time** via `REACT_APP_API_URL` — CRA inlines it into the bundle, so changing environments needs a rebuild, not just a restart.
 
-### 🔒 Security
+### Security
 JWT (HS256, `python-jose`) issued once by `user-service`, verified centrally by the same service for everyone else over gRPC. No wildcard CORS anywhere; `CORS_ORIGINS` explicitly enumerates the real frontend origin. Password hashing is currently **unsalted SHA-256** — fine for seeded demo accounts, called out here rather than glossed over, and the first thing to fix before accepting real signups.
 
-### 🐳 Containerization & deployment
+### Containerization & deployment
 Docker + Docker Compose — one `docker-compose.yml` (14 services) + a `docker-compose.prod.yml` overlay (adds Caddy, hardens memory limits). See `DEPLOY_PLAN.md`, `CI_CD_PIPELINE.md`, and `SYSTEM_DESIGN_AND_DEPLOYMENT.md` for the full production deployment story, including three real infrastructure bugs hit and fixed on a live cloud deploy.
 
-### 📊 Observability
-Prometheus + Grafana are running but **not fully wired** — no service currently instruments its `/metrics` endpoint, so every Prometheus target shows `DOWN`. Kept as a placeholder, documented honestly rather than presented as finished.
+### Observability
+Prometheus + Grafana are running but **not fully wired** — no service currently instruments its `/metrics` endpoint, so every Prometheus target shows `DOWN`.
 
 ---
 
-## 🗺️ Architecture Diagram
+## Architecture Diagram
 
 ```mermaid
 flowchart TB
@@ -227,7 +227,7 @@ flowchart TB
     MS -- publish --> RMQ
     RMQ --> NS
 
-    subgraph OBS ["Observability (not fully wired)"]
+    subgraph OBS ["Observability"]
         direction LR
         PROM["Prometheus"]
         GRAF["Grafana"]
@@ -238,7 +238,7 @@ flowchart TB
 
 ---
 
-## 🎯 Consistent Hashing — why two shards don't mean double the headaches
+## Consistent Hashing — why two shards don't mean double the headaches
 
 This is the core system-design decision in the project, so it gets its own diagram instead of a paragraph of prose.
 
@@ -293,7 +293,7 @@ Full verification report (18 automated checks, including the numbers above) live
 
 ---
 
-## 🔐 Login Flow
+## Login Flow
 
 ```mermaid
 flowchart TD
@@ -320,7 +320,7 @@ flowchart TD
 
 ---
 
-## 💬 Real-time Chat Flow
+## Real-time Chat Flow
 
 ```mermaid
 flowchart TD
@@ -357,7 +357,7 @@ flowchart TD
 
 ---
 
-## 🧱 System Components
+## System Components
 
 | Component | Tech | Role |
 |---|---|---|
@@ -466,7 +466,7 @@ erDiagram
 
 **Entity legend:** `user_accounts` · `marketplace_items` · `item_images` · `item_saved` · `marketplace_messages` · `item_interactions` · `user_activity`
 
-> 🎯 **Every table above is sharded.** Each row lives on whichever of `postgres_shard0` / `postgres_shard1` the consistent-hash ring assigns its owning `user_id` to (`backend/app/core/consistent_hash.py`, `shard_db.py`). The schema is identical on both shards — sharding is transparent to the ERD itself. Three foreign keys that can structurally cross shards (`item_interactions.item_id`, `item_saved.item_id`, and every FK on `marketplace_messages`) are deliberately dropped in the sharded seeder, since Postgres cannot enforce a FK across two separate database instances — referential integrity for those moves to the application layer, on purpose, not by oversight.
+>  **Every table above is sharded.** Each row lives on whichever of `postgres_shard0` / `postgres_shard1` the consistent-hash ring assigns its owning `user_id` to (`backend/app/core/consistent_hash.py`, `shard_db.py`). The schema is identical on both shards — sharding is transparent to the ERD itself. Three foreign keys that can structurally cross shards (`item_interactions.item_id`, `item_saved.item_id`, and every FK on `marketplace_messages`) are deliberately dropped in the sharded seeder, since Postgres cannot enforce a FK across two separate database instances — referential integrity for those moves to the application layer, on purpose, not by oversight.
 
 ---
 
@@ -503,17 +503,17 @@ docker compose run --rm seed python3 seed_sharded.py --truncate && python3 verif
 
 | Service | URL |
 |---|---|
-| 🌐 Frontend | http://localhost:3000 |
-| 🌐 API Gateway (Nginx) | http://localhost:80 |
-| 🔑 user-service | http://localhost:8001 |
-| 📦 listing-service | http://localhost:8002 |
-| 💬 messaging-service | http://localhost:8003 |
-| 📊 activity-service | http://localhost:8004 |
-| 🤖 recommendation-service | http://localhost:8005 |
-| 🐰 RabbitMQ management UI | http://localhost:15672 |
-| 📈 Grafana | http://localhost:3001 |
+|  Frontend | http://localhost:3000 |
+|  API Gateway (Nginx) | http://localhost:80 |
+|  user-service | http://localhost:8001 |
+|  listing-service | http://localhost:8002 |
+|  messaging-service | http://localhost:8003 |
+|  activity-service | http://localhost:8004 |
+|  recommendation-service | http://localhost:8005 |
+|  RabbitMQ management UI | http://localhost:15672 |
+|  Grafana | http://localhost:3001 |
 
-### 🚀 Production deployment
+###  Production deployment
 
 For deploying to a public server with real HTTPS instead of local-only Docker, see:
 - **`DEPLOY_PLAN.md`** — the verified, step-by-step production runbook (VM setup, Caddy/TLS, security hardening)
@@ -579,14 +579,14 @@ electrohub/
 
 ## 📡 API Reference
 
-### 🔑 Auth
+###  Auth
 | Method | Path | Description |
 |---|---|---|
 | POST | `/auth/login` | Returns JWT + user object |
 
 > No registration endpoint exists — this is a demo with pre-seeded accounts (`demo@electrohub.com` / `password123` among them), not an open-signup app.
 
-### 📦 Marketplace
+###  Marketplace
 | Method | Path | Description |
 |---|---|---|
 | GET | `/marketplace/items` | List / search items (`search`, `category`, `limit`, `skip`) |
@@ -599,7 +599,7 @@ electrohub/
 | GET | `/marketplace/autocomplete?q=` | ⚡ Top-10 suggestions — Redis cache in front of the Trie |
 | POST | `/marketplace/autocomplete/rebuild` | Re-index the Trie from the DB, clear the cache |
 
-### 💬 Messaging
+###  Messaging
 | Method | Path | Description |
 |---|---|---|
 | POST | `/messages/contact/{item_id}` | Buyer's first message to a seller about an item |
@@ -608,20 +608,20 @@ electrohub/
 | GET | `/messages/unread-count` | Badge count (unread messages) |
 | WS | `/messages/ws/{item_id}/{seller_id}?token=` | Real-time chat — see the [flow diagram](#-real-time-chat-flow) |
 
-### 📊 Activity
+###  Activity
 | Method | Path | Description |
 |---|---|---|
 | POST | `/activity/track` | Log an interaction event (not currently called by the frontend) |
 | GET | `/activity/summary/{user_id}` | Aggregated activity counts by type |
 
-### 🤖 Recommendations
+###  Recommendations
 | Method | Path | Description |
 |---|---|---|
 | GET | `/recommendations/{item_id}?limit=6` | Top-N similar items via SBERT |
 
 ---
 
-## 🤖 How SBERT Recommendations Work
+##  How SBERT Recommendations Work
 
 On startup, `recommendation-service` loads every active item and builds a text string per item:
 
