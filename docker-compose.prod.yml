@@ -1,0 +1,90 @@
+##############################################################################
+#  Production overlay — use IN ADDITION to docker-compose.yml, never alone:
+#
+#      docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+#  What it changes:
+#    1. Nginx stops owning host :80 (moves to 127.0.0.1:8080) so Caddy can
+#       bind :80/:443 for TLS + the ACME HTTP-01 challenge. The base file's
+#       "80:80" would otherwise collide with Caddy and the deploy would fail
+#       at bind time.
+#    2. Adds Caddy: automatic Let's Encrypt certificates, http->https
+#       redirect, reverse proxy to the nginx container.
+#    3. Caps memory on the two hogs (Kafka's JVM and the SBERT service) so a
+#       small VM cannot be OOM-killed into a restart loop.
+#    4. Rotates container logs, so a long-running VM cannot fill its disk
+#       with unbounded json-file logs.
+#
+#  Requires PUBLIC_DOMAIN and ACME_EMAIL in .env (see .env.example).
+##############################################################################
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: electrohub-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"     # HTTP/3
+    environment:
+      PUBLIC_DOMAIN: "${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required for TLS — set it to the DNS name pointing at this machine}"
+      ACME_EMAIL: "${ACME_EMAIL:?ACME_EMAIL is required — Let's Encrypt sends certificate expiry notices there}"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data          # certificates + ACME account key: MUST persist
+      - caddy_config:/config
+    depends_on:
+      - nginx
+    restart: unless-stopped
+    logging: *default-logging
+
+  nginx:
+    # Loopback only — the public entrypoint is Caddy. Kept published on 8080
+    # so you can still `curl -I localhost:8080/health` on the box itself.
+    ports:
+      - "127.0.0.1:8080:80"
+    logging: *default-logging
+
+  recommendation-service:
+    # torch + all-MiniLM-L6-v2 is the single biggest consumer in the stack
+    # (~700 MB-1.2 GB resident while it encodes the catalogue on startup).
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    logging: *default-logging
+
+  kafka:
+    environment:
+      # The image otherwise starts the broker with a 1 GB fixed heap, which is
+      # pure waste for this workload's message volume.
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    logging: *default-logging
+
+  postgres_shard0:      { logging: *default-logging }
+  postgres_shard1:      { logging: *default-logging }
+  redis:                { logging: *default-logging }
+  rabbitmq:             { logging: *default-logging }
+  user-service:         { logging: *default-logging }
+  listing-service:      { logging: *default-logging }
+  messaging-service:    { logging: *default-logging }
+  notification-service: { logging: *default-logging }
+  activity-service:     { logging: *default-logging }
+  prometheus:           { logging: *default-logging }
+  grafana:              { logging: *default-logging }
+  seed:                 { logging: *default-logging }
+
+volumes:
+  caddy_data:
+  caddy_config:

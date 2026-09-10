@@ -1,0 +1,30 @@
+syntax = "proto3";
+package electrohub.listing;
+
+service ListingService {
+  rpc GetListing     (GetListingRequest)     returns (ListingResponse);
+  rpc GetSellerInfo  (GetSellerInfoRequest)  returns (SellerInfoResponse);
+}
+
+message GetListingRequest {
+  int32 item_id = 1;
+}
+
+message ListingResponse {
+  int32  item_id   = 1;
+  string title     = 2;
+  string seller_id = 3;
+  bool   is_active = 4;
+  float  price     = 5;
+}
+
+message GetSellerInfoRequest {
+  int32 item_id = 1;
+}
+
+message SellerInfoResponse {
+  string seller_id    = 1;
+  string seller_email = 2;
+  string seller_name  = 3;
+  string item_title   = 4;
+}

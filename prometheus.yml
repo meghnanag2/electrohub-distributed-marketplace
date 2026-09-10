@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: user-service
+    static_configs:
+      - targets: ["user-service:8001"]
+    metrics_path: /metrics
+
+  - job_name: listing-service
+    static_configs:
+      - targets: ["listing-service:8002"]
+    metrics_path: /metrics
+
+  - job_name: messaging-service
+    static_configs:
+      - targets: ["messaging-service:8003"]
+    metrics_path: /metrics
+
+  - job_name: activity-service
+    static_configs:
+      - targets: ["activity-service:8004"]
+    metrics_path: /metrics

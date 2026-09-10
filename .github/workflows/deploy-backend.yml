@@ -1,0 +1,60 @@
+name: Deploy backend to AWS EC2
+
+# Push-to-deploy: a push to main that touches backend/service/infra files
+# SSHes into the EC2 VM, fast-forwards it to the new commit, and rebuilds
+# only the containers whose images changed. Requires three repo secrets —
+# see CI_CD_PIPELINE.md for exactly how to create them:
+#   EC2_HOST        the VM's public IP or domain
+#   EC2_USER        ssh user (ubuntu on Ubuntu AMIs)
+#   EC2_SSH_KEY     the PRIVATE half of the keypair authorized on the VM
+#
+# The frontend is NOT deployed here — Vercel's own GitHub integration
+# rebuilds it on every push once the repo is connected in the Vercel
+# dashboard. This workflow only ever touches the backend VM.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "services/**"
+      - "nginx/**"
+      - "database/**"
+      - "docker-compose.yml"
+      - "docker-compose.prod.yml"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch: {} # lets you trigger a redeploy by hand from the Actions tab
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false # never cancel a deploy that is mid-flight
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy over SSH
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" '
+            set -e
+            cd ~/electrohub
+            git fetch origin main
+            git reset --hard origin/main
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+            docker image prune -f
+            echo "--- container status ---"
+            docker compose ps
+          '
+
+      - name: Post-deploy health check
+        run: |
+          sleep 10
+          curl -sf "https://${{ secrets.EC2_HOST }}/health" || \
+            (echo "::error::Backend health check failed after deploy" && exit 1)

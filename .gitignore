@@ -1,0 +1,18 @@
+# Secrets — never commit real values, only .env.example
+.env
+.env.local
+.env.*.local
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+
+# Python
+**/__pycache__/
+*.pyc
+services/*/app/grpc/generated/*_pb2*.py
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

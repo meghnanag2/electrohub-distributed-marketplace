@@ -1,0 +1,56 @@
+name: CI
+
+# Runs on every push and PR. No AWS credentials touched here — this only
+# validates that the frontend builds, the Python services parse, and the
+# compose file is well-formed. Free on GitHub Actions for public repos;
+# 2,000 min/month free for private repos, and this whole job is under a
+# minute, so cost is not a real concern here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  backend-compile-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Byte-compile every service (catches syntax errors before deploy)
+        run: |
+          python -m py_compile $(find backend services -name '*.py' -not -path '*/generated/*')
+
+  compose-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose.yml + prod overlay with placeholder secrets
+        run: |
+          cp .env.example .env
+          sed -i 's/^POSTGRES_PASSWORD=$/POSTGRES_PASSWORD=ci-placeholder/' .env
+          sed -i 's/^JWT_SECRET_KEY=$/JWT_SECRET_KEY=ci-placeholder-0123456789abcdef0123456789abcdef/' .env
+          sed -i 's/^RABBITMQ_USER=$/RABBITMQ_USER=ci/' .env
+          sed -i 's/^RABBITMQ_PASSWORD=$/RABBITMQ_PASSWORD=ci-placeholder/' .env
+          sed -i 's/^GRAFANA_ADMIN_PASSWORD=$/GRAFANA_ADMIN_PASSWORD=ci-placeholder/' .env
+          echo "PUBLIC_DOMAIN=ci.example.com" >> .env
+          echo "ACME_EMAIL=ci@example.com" >> .env
+          docker compose config >/dev/null && echo "base compose OK"
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config >/dev/null && echo "prod overlay OK"

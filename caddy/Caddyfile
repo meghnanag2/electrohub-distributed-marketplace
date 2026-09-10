@@ -1,0 +1,30 @@
+# Caddy = TLS terminator in front of the Nginx API gateway.
+#
+# Why this exists: Vercel always serves the frontend over HTTPS, and browsers
+# hard-block a secure page from calling http:// APIs or opening ws:// sockets
+# (mixed content). So the backend MUST be HTTPS too, or login, browsing and
+# chat all fail the moment anyone opens the Vercel URL.
+#
+# Caddy gets and renews a Let's Encrypt certificate on its own — no certbot,
+# no cron. That requires:
+#   * PUBLIC_DOMAIN is a real DNS name resolving to this machine's public IP
+#     (a bare IP address can never get a publicly trusted certificate)
+#   * ports 80 and 443 reachable from the internet (80 is used for the
+#     ACME HTTP-01 challenge and for the http->https redirect)
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$PUBLIC_DOMAIN} {
+	encode zstd gzip
+
+	# nginx:80 is the gateway container on the internal Docker network.
+	# Caddy sets X-Forwarded-For / -Proto / -Host automatically; nginx.conf
+	# trusts those (set_real_ip_from) so per-IP rate limiting still keys on
+	# the real visitor rather than on Caddy.
+	reverse_proxy nginx:80
+
+	# WebSocket upgrades (/messages/ws/...) pass through reverse_proxy
+	# unchanged — no extra configuration needed.
+}

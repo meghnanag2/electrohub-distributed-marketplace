@@ -1,0 +1,27 @@
+syntax = "proto3";
+package electrohub.user;
+
+service UserService {
+  rpc GetUser          (GetUserRequest)    returns (UserResponse);
+  rpc VerifyToken      (VerifyTokenRequest) returns (VerifyTokenResponse);
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message UserResponse {
+  string user_id   = 1;
+  string email     = 2;
+  string name      = 3;
+  bool   is_active = 4;
+}
+
+message VerifyTokenRequest {
+  string token = 1;
+}
+
+message VerifyTokenResponse {
+  bool   valid   = 1;
+  string user_id = 2;
+}
