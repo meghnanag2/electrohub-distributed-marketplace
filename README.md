@@ -15,8 +15,7 @@
   </p>
 
   <p>
-    <a href="https://electrohub-rose.vercel.app"><strong>🚀 Live Demo</strong></a> ·
-    <a href="https://electrohub-rose.vercel.app/login">Login page</a>
+    <a href="https://electrohub-rose.vercel.app"><strong>🚀 Live Demo</strong></a>
   </p>
 </div>
 
